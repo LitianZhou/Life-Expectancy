@@ -1,0 +1,228 @@
+---
+title: "Project Proposal 2 Exploration"
+author: "Aaron Chumsky"
+date: "1/27/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+getwd()
+life<-read.csv("Life Expectancy Data.csv")
+
+```
+
+```{r}
+dim(life)
+sum(is.na(life$Hepatitis.B))
+sum(is.na(life$GDP))
+sum(is.na(life$Population))
+
+```
+There are 2938 observations with 22 variables, and only the Hepatitis.B, GDP, and Population variables are missing relatively high number of observations. With still over 1000 observations, these variables can still potentially play a role in our analysis.
+
+```{r}
+names(life)
+```
+22 variables have pretty clear names, with descriptions available on kaggle for specifics. Starting to see some redundancy of variable. With BMI as a variable, thinness of people aged 5 to 9 and 10 to 19 may be redundant. Additionally, if deaths under the age of five is already present, infant mortality may be redundant.
+
+```{r}
+str(life)
+```
+
+Country and Status are only two categorical values. Two levels for status make it very interpretable, and differences in country in its own right is very interpretable despite 193 different levels. Otherwise, all data is numerical, making it pretty interpretable.
+
+```{r}
+plot(life$percentage.expenditure, life$Life.expectancy)
+```
+
+Although the relationship certainly isn't linear, there is more prevalence of higher life expectancies when there is a higher percent expenditure. Perhaps this is a useful predictor in the end, but it can't be the only one.
+
+```{r}
+plot(life$Status, life$Life.expectancy)
+```
+
+Developed countries certainly have a higher median life expectancy over those who are developing.
+
+More analysis will need to be done on each of the predictors, but we're already seeing early on that there are variables that seem to be more associated with higher life expectancy.
+
+```{r}
+summary(life$Life.expectancy)
+```
+
+```{r}
+plot(sqrt(life$Adult.Mortality), life$Life.expectancy)
+plot((life$Alcohol)^.5, life$Life.expectancy)
+plot(log(life$percentage.expenditure), life$Life.expectancy)
+plot(life$BMI, life$Life.expectancy)
+plot((life$Diphtheria)^2, life$Life.expectancy)
+plot(sqrt(life$HIV.AIDS), life$Life.expectancy)
+plot(life$Income.composition.of.resources, life$Life.expectancy)
+plot(life$Schooling, life$Life.expectancy)
+```
+
+```{r}
+getwd()
+life<-read.csv("Life Expectancy Data.csv")
+life<-na.omit(life)
+cor(life[4:22])
+life=life %>% mutate(logper=log(life$percentage.expenditure))
+life=life %>% mutate(sqrmort=sqrt(life$Adult.Mortality))
+life=life %>% mutate(sqralc=sqrt(life$Alcohol))
+life=life %>% mutate(Diphtheria2=(life$Diphtheria)^2)
+life=life %>% mutate(sqrHIV.AIDS=sqrt(life$HIV.AIDS))
+life=life %>% filter()
+
+
+```
+
+From this correlation plot, I can see that life expectancy seems to be pretty correlated to adult mortality (negatively), alcohol, percent expenditure, BMI, Polio, Diphtheria, HIV (negatively), GDP, Income composition of resources, and schooling.
+
+Although I found all these variables to be correlated with life expectancy, when I include all of these in the model, I wouldn't be surpirsed if multicolinnearity comes into play. I will use VIF to measure this after I run the model.
+
+```{r}
+life1<-lm(Life.expectancy~Status+Adult.Mortality+Alcohol+percentage.expenditure+BMI+Polio+Diphtheria+HIV.AIDS+GDP+Income.composition.of.resources+Schooling, data = life)
+summary(life1)
+library(car)
+vif(life1)
+```
+
+It appears Polio and GDP don't have a significant relationship with life expectancy, and GDP has a very high VIF so it may be bringing collinearity into the problem. Let's remove these two variables.
+
+```{r}
+life1<-lm(Life.expectancy~Status+Adult.Mortality+Alcohol+logper+BMI+Diphtheria+sqrHIV.AIDS+Income.composition.of.resources+Schooling, data = life)
+summary(life1)
+vif(life1)
+```
+
+Now, there is no high VIF, and all the variables seem to be significantly correlated to life expectancy.
+
+With an R^2 value of .8493, this seems to produce a very good fit thus far.
+
+To interpret a couple coefficients, it appears that on average, holding all other variables constant, developing countries have a life expectancy thats 1 year lower than that of developed countries.
+In addition, holding all other variables constant, an increase in one unit of BMI leads to a decrease in life expectancy by .0265 years.
+
+I realize that this isn't a lot of years, but all the variables coming together can lead to significant differences in life expectancy. In addition, many of these relationships may very well not be linear, leading to the relationships not being estimated perfectly. Also, statisticly significant and practically signifanct are two very different things.
+
+```{r}
+plot(life1)
+summary(cooks.distance(life1))
+```
+
+The normal distribution seems to be followed very well which certainly makes the data nicer to work with.
+
+There may be slight evidence of non-linearity but it doesn't seem to deviate too far.
+
+Aside from the endpoitns, the data appears to be mostly homoskedastic.
+
+There are a couple outliers in the data that are greater than 3 or less than -3 standardized residuals and there are a bunch of points (between 6 to 8 roughly) that are of high leverage that may be significantly influencing the relationships.
+
+Fortunately, none of these cooks distance values are near 1, so we shouldn't be too concerned about influential points.
+
+```{r}
+high=ifelse(life$Life.expectancy>70, 1, 0)
+life=data.frame(life,high)
+```
+Created a categorical variable to see if we can determine factors that effect high or low life expectancy or even predict high or low life expectancy. We set the thresholf for high life expectancy as 70 since the mean and median are centering around there. This now becomes a classifcation problem.
+```{r}
+lifelog<-glm(high~.-Life.expectancy-Country-Year-thinness..1.19.years-thinness.5.9.years-high.1-logper-sqrmort-sqralc-Diphtheria2-sqrHIV.AIDS, data = life)
+summary(lifelog)
+vif(lifelog)
+```
+ 
+GDP, under.five.deaths, percentage.expendtiure and infant.deaths have very high vif and will be removed due to collinearity
+
+```{r}
+lifelog2<-glm(high~.-Country-Year-thinness..1.19.years-thinness.5.9.years-under.five.deaths-GDP-percentage.expenditure-infant.deaths-Life.expectancy-high.1-logper-sqrmort-sqralc-Diphtheria2-sqrHIV.AIDS, data = life)
+summary(lifelog2)
+vif(lifelog2)
+```
+
+In the logistic regression model, there are couple fewer significant predictors with only BMI, Adult Mortality, Total expenditure, population, HIV, schooling, and income composition of resources being significant. 
+
+Now, using the significant predictors in this model, I'll split the data into a training and testing set.
+
+```{r}
+set.seed(2)
+train_life=sample(1:nrow(life), 1649*.7, replace=FALSE)
+life.train=life[train_life,]
+life.test=life[-train_life,]
+head(life.train,10)
+head(life.test,10)
+```
+
+Let's fit a logistic model on this and determine the misclassifcation rate.
+
+```{r}
+loglife.fit=glm(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, subset=train_life)
+summary(loglife.fit)
+loglife.pred<-predict(loglife.fit, life.test, type = "response")
+loglife.class=rep(0, length(loglife.pred))
+loglife.class[loglife.pred>.5]=1
+table(loglife.class, life.test$high)
+mean(loglife.class != life.test$high)
+```
+
+An error rate of 11%, not bad.
+
+Now let's see how this compares on LDA, QDA, and KNN.
+
+```{r}
+ldalife.fit=lda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, subset=train_life)
+ldalife.fit
+ldalife.pred=predict(ldalife.fit, life.test)
+ldalife.class=ldalife.pred$class
+table(ldalife.class, life.test$high)
+mean(ldalife.class != life.test$high)
+```
+
+In LDA, just like Logistic regression, we have an error rate of 11%.
+
+```{r}
+qdalife.fit=qda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, subset=train_life)
+qdalife.fit
+qdalife.pred=predict(qdalife.fit, life.test)
+qdalife.class=qdalife.pred$class
+table(qdalife.class, life.test$high)
+mean(qdalife.class != life.test$high)
+```
+
+The error rate for QDA is 17.3% so this may suggest that our model is better fit to a linear model, meaning our data is closer to being linear.
+
+```{r}
+set.seed(3)
+train_life2=cbind(life$BMI, life$Adult.Mortality, life$Total.expenditure, life$Population, life$HIV.AIDS, life$Schooling, life$Income.composition.of.resources)[train_life,]
+test_life2=cbind(life$BMI, life$Adult.Mortality, life$Total.expenditure, life$Population, life$HIV.AIDS, life$Schooling, life$Income.composition.of.resources)[-train_life,]
+train.high=high[train_life]
+knnlife.pred10=knn(train_life2, test_life2, train.high, k=10)
+table(knnlife.pred10, life.test$high)
+mean(knnlife.pred10 != life.test$high)
+```
+
+With k=10, KNN produces a very high error rate of 37%.
+
+```{r}
+set.seed(1)
+knnlife.pred50=knn(train_life2, test_life2, train.high, k=50)
+table(knnlife.pred50, life.test$high)
+mean(knnlife.pred50 != life.test$high)
+```
+
+
+With k=50, the misclassification rate stays at 36.3%
+
+```{r}
+set.seed(1)
+knnlife.pred100=knn(train_life2, test_life2, train.high, k=100)
+table(knnlife.pred100, life.test$high)
+mean(knnlife.pred100 != life.test$high)
+```
+
+It's at around 36% with k=100, so it doesn't seem that the value of k is having a huge effect on this model.
+
+In general, Logistic regression and LDA had the lowest rates, so this data set seems to prefer less flexible models that produce less variance. This may indicate that this data set doesn't have too complicated a form and doesn't require as strict a fit. 
+
+
