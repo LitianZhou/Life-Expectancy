@@ -66,6 +66,7 @@ plot(life$Schooling, life$Life.expectancy)
 
 ```{r}
 getwd()
+library(dplyr)
 life<-read.csv("Life Expectancy Data.csv")
 life<-na.omit(life)
 cor(life[4:22])
@@ -74,7 +75,7 @@ life=life %>% mutate(sqrmort=sqrt(life$Adult.Mortality))
 life=life %>% mutate(sqralc=sqrt(life$Alcohol))
 life=life %>% mutate(Diphtheria2=(life$Diphtheria)^2)
 life=life %>% mutate(sqrHIV.AIDS=sqrt(life$HIV.AIDS))
-life=life %>% filter()
+life=life %>% filter(logper>=0)
 
 
 ```
@@ -93,11 +94,10 @@ vif(life1)
 It appears Polio and GDP don't have a significant relationship with life expectancy, and GDP has a very high VIF so it may be bringing collinearity into the problem. Let's remove these two variables.
 
 ```{r}
-life1<-lm(Life.expectancy~Status+Adult.Mortality+Alcohol+logper+BMI+Diphtheria+sqrHIV.AIDS+Income.composition.of.resources+Schooling, data = life)
+life1<-glm(Life.expectancy~Status+Adult.Mortality+Alcohol+logper+BMI+Diphtheria+sqrHIV.AIDS+Income.composition.of.resources+Schooling, data = life)
 summary(life1)
 vif(life1)
 ```
-
 Now, there is no high VIF, and all the variables seem to be significantly correlated to life expectancy.
 
 With an R^2 value of .8493, this seems to produce a very good fit thus far.
@@ -122,13 +122,30 @@ There are a couple outliers in the data that are greater than 3 or less than -3 
 
 Fortunately, none of these cooks distance values are near 1, so we shouldn't be too concerned about influential points.
 
+Now, let's add interactions.
+```{r}
+subset<-life %>% select(Life.expectancy, Status, Adult.Mortality, Alcohol, logper, BMI, Diphtheria, sqrHIV.AIDS, Income.composition.of.resources)
+
+lifesubset<-lm(Life.expectancy~.*., data=subset)
+summary(lifesubset)
+```
+Significant interactions: sqrHIV.AIDS:Income, Diphtheria:Income, BMI:Diphtheria, Alcohol:Income, Adult:Income, Adult:sqrHIV.AIDS, Adult:BMI, Adult:logper, Adult:Alcohol, Status:Income, Status:Alcohol, Status:Adult
+
+```{r}
+lifeint<-lm(Life.expectancy~Status+Adult.Mortality+Alcohol+logper+BMI+Diphtheria+sqrHIV.AIDS+Income.composition.of.resources+sqrHIV.AIDS*Income.composition.of.resources+Diphtheria*Income.composition.of.resources+BMI*Diphtheria+Alcohol*Income.composition.of.resources+Adult.Mortality*Income.composition.of.resources+Adult.Mortality*sqrHIV.AIDS+Adult.Mortality*BMI+Adult.Mortality*logper+Adult.Mortality*Alcohol+Status*Income.composition.of.resources+Status*Alcohol+Status*Adult.Mortality, data=life)
+
+summary(lifeint)
+```
+The interactions don't lead to a significantly higher fit (only about 2% increase in R^2) so they don't appear necessary to leave in the model.
+
+
 ```{r}
 high=ifelse(life$Life.expectancy>70, 1, 0)
 life=data.frame(life,high)
 ```
 Created a categorical variable to see if we can determine factors that effect high or low life expectancy or even predict high or low life expectancy. We set the thresholf for high life expectancy as 70 since the mean and median are centering around there. This now becomes a classifcation problem.
 ```{r}
-lifelog<-glm(high~.-Life.expectancy-Country-Year-thinness..1.19.years-thinness.5.9.years-high.1-logper-sqrmort-sqralc-Diphtheria2-sqrHIV.AIDS, data = life)
+lifelog<-glm(high~.-Life.expectancy-Country-Year-thinness..1.19.years-thinness.5.9.years-logper-sqrmort-sqralc-Diphtheria2-sqrHIV.AIDS, data = life)
 summary(lifelog)
 vif(lifelog)
 ```
@@ -136,7 +153,7 @@ vif(lifelog)
 GDP, under.five.deaths, percentage.expendtiure and infant.deaths have very high vif and will be removed due to collinearity
 
 ```{r}
-lifelog2<-glm(high~.-Country-Year-thinness..1.19.years-thinness.5.9.years-under.five.deaths-GDP-percentage.expenditure-infant.deaths-Life.expectancy-high.1-logper-sqrmort-sqralc-Diphtheria2-sqrHIV.AIDS, data = life)
+lifelog2<-glm(high~Status + Adult.Mortality+Alcohol+Hepatitis.B+Measles+BMI+Polio+Total.expenditure+Diphtheria+HIV.AIDS+Population+Income.composition.of.resources+Schooling, data = life)
 summary(lifelog2)
 vif(lifelog2)
 ```
@@ -166,11 +183,13 @@ table(loglife.class, life.test$high)
 mean(loglife.class != life.test$high)
 ```
 
-An error rate of 11%, not bad.
+An error rate of 14.5%, not bad.
 
 Now let's see how this compares on LDA, QDA, and KNN.
 
 ```{r}
+library(MASS)
+ldalife=lda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life)
 ldalife.fit=lda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, subset=train_life)
 ldalife.fit
 ldalife.pred=predict(ldalife.fit, life.test)
@@ -179,7 +198,7 @@ table(ldalife.class, life.test$high)
 mean(ldalife.class != life.test$high)
 ```
 
-In LDA, just like Logistic regression, we have an error rate of 11%.
+In LDA, just like Logistic regression, we have an error rate of 14.5%.
 
 ```{r}
 qdalife.fit=qda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, subset=train_life)
@@ -190,10 +209,13 @@ table(qdalife.class, life.test$high)
 mean(qdalife.class != life.test$high)
 ```
 
-The error rate for QDA is 17.3% so this may suggest that our model is better fit to a linear model, meaning our data is closer to being linear.
+The error rate for QDA is 22% so this may suggest that our model is better fit to a linear model, meaning our data is closer to being linear.
 
 ```{r}
 set.seed(3)
+library(caret)
+library(e1071)
+library(class)
 train_life2=cbind(life$BMI, life$Adult.Mortality, life$Total.expenditure, life$Population, life$HIV.AIDS, life$Schooling, life$Income.composition.of.resources)[train_life,]
 test_life2=cbind(life$BMI, life$Adult.Mortality, life$Total.expenditure, life$Population, life$HIV.AIDS, life$Schooling, life$Income.composition.of.resources)[-train_life,]
 train.high=high[train_life]
@@ -202,7 +224,7 @@ table(knnlife.pred10, life.test$high)
 mean(knnlife.pred10 != life.test$high)
 ```
 
-With k=10, KNN produces a very high error rate of 37%.
+With k=10, KNN produces a very high error rate of 40%.
 
 ```{r}
 set.seed(1)
@@ -212,7 +234,7 @@ mean(knnlife.pred50 != life.test$high)
 ```
 
 
-With k=50, the misclassification rate stays at 36.3%
+With k=50, the misclassification rate stays at 39%
 
 ```{r}
 set.seed(1)
@@ -221,8 +243,119 @@ table(knnlife.pred100, life.test$high)
 mean(knnlife.pred100 != life.test$high)
 ```
 
-It's at around 36% with k=100, so it doesn't seem that the value of k is having a huge effect on this model.
+It's at around 40% with k=100, so it doesn't seem that the value of k is having a huge effect on this model.
 
 In general, Logistic regression and LDA had the lowest rates, so this data set seems to prefer less flexible models that produce less variance. This may indicate that this data set doesn't have too complicated a form and doesn't require as strict a fit. 
 
 
+First, I will do 5 and 10 fold cross validation on the linear regression model to determine the true MSE.
+```{r}
+library(dplyr)
+library(MASS)
+life<-read.csv("Life Expectancy Data.csv")
+life=na.omit(life)
+life=life %>% mutate(logper=log(life$percentage.expenditure))
+life=life %>% filter(logper>=0)
+life=life %>% mutate(sqrHIV.AIDS=sqrt(life$HIV.AIDS))
+high=ifelse(life$Life.expectancy>70, 1, 0)
+life=data.frame(life,high)
+set.seed(30)
+life1<-glm(Life.expectancy~Status+Adult.Mortality+Alcohol+logper+BMI+Diphtheria+sqrHIV.AIDS+Income.composition.of.resources+Schooling, data = life)
+summary(life1)
+mean(life1$deviance/life1$df.residual)
+
+```
+The MSE is around 11.5 on one iteration.
+
+
+```{r}
+library(boot)
+lmcv.error.5=cv.glm(life, life1, K=5)
+lmcv.error.5$delta
+
+lmcv.error.10=cv.glm(life, life1, K=10)
+lmcv.error.10$delta
+  
+
+```
+
+With 5 and 10 fold cross validation, the estimated MSE is around 11.6, which is practically the same as our original estimate. For a value like life expectancy, being 11 years off isn't ideal, so hopefully we run into a better model later in.
+
+
+Now let's use this method on the classifcation models that were built for predicting high life expectancy (greater than 70 years old) or low life expectancy (less than 70 years old).
+
+```{r}
+lifelog2<-glm(high~Status + Adult.Mortality+Alcohol+Hepatitis.B+Measles+BMI+Polio+Total.expenditure+Diphtheria+HIV.AIDS+Population+Income.composition.of.resources+Schooling, data = life)
+logcv.error.5=cv.glm(life, lifelog2, K=5)
+logcv.error.5$delta
+
+logcv.error.10=cv.glm(life, lifelog2, K=10)
+logcv.error.10$delta
+```
+
+In this case, the misclassification rate for high life expectancy is around 11.3%, which isn't so bad because nearly 9 out of every 10 people are being correctly predicted.
+
+```{r}
+library(MASS)
+high=ifelse(life$Life.expectancy>70, 1, 0)
+life=data.frame(life,high)
+ldalife.cv=lda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, CV=TRUE)
+table(life$high, ldalife.cv$class)
+(64+145)/1629
+
+```
+
+Using LOOCV in LDA, the missclassication rate is 12.83
+
+```{r}
+qdalife.cv=qda(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, data = life, CV=TRUE)
+
+table(life$high, qdalife.cv$class)
+(40+286)/1629
+
+```
+
+The QDA misclassifcation rate using LOOCV is higher at 20%, which is consistent with what we had before because the data here seems more linear.
+
+Lastly, I will perform cross validation at 5 and 10 folds to determine the optimal value of K in K Nearest Neighbors and how the error rate for the best K value compares to our other classification methods.
+
+```{r}
+set.seed(31)
+library(caret)
+library(e1071)
+life$high=as.factor(life$high)
+trControl <- trainControl(method  = "cv",
+                          number  = 5)
+trControl2<- trainControl(method  = "cv",
+                          number  = 10)
+knn.fit<-train(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, method="knn", tuneGrid=expand.grid(k=1:50), trControl=trControl, metric="Accuracy", data=life)
+
+knn.fit2<-train(high~BMI+Adult.Mortality+Total.expenditure+Population+HIV.AIDS+Schooling+Income.composition.of.resources, method="knn", tuneGrid=expand.grid(k=1:50), trControl=trControl2, metric="Accuracy", data=life)
+
+knn.fit
+knn.fit2
+```
+
+After doing 5 fold cross validation, it appears that K=41 has the best fit with a misclassication rate of around 37%
+
+After doing 10 fold cross validation, it appears that K=40 has the best fit with a misclassication rate of around 36.7%. 
+
+Either way, the optimal choice of K is around 40 and the misclassfication rate is still higher than any other classication method we've performed, so it seems the high flexibility and therefore high variance that comes with KNN doesn't act favorably with this data set.
+
+Now that I've done a lot on the classification problem, I want to go back and run more tests on the regression model. 
+
+I'd like to run a bootstrap to see estimate of the coefficients
+
+```{r}
+boot.fn=function(data, index) +
+  return(coef(lm(Life.expectancy~Status+Adult.Mortality+Alcohol+logper+BMI+Diphtheria+sqrHIV.AIDS+Income.composition.of.resources+Schooling, data=data, subset=index)))
+boot.fn(life, 1:1629)
+set.seed(32)
+boot.fn(life, sample(1629, 1629, replace = TRUE))
+boot.fn(life, sample(1629, 1629, replace = TRUE))
+
+boot<-boot(life, boot.fn, 1000)
+boot
+```
+
+After taking 1000 bootstrap samples, it appears the coefficient estimates haven't really changed and still are significantly associated with life expectancy.

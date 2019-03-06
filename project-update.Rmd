@@ -1,0 +1,74 @@
+---
+title: "1361 Project Update"
+author: "Tianke Li"
+date: "3/5/2019"
+output: html_document
+---
+
+Note that the preliminary data exploratin has been covered by Aaron in his previous work
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+```{r init}
+setwd("../../Project/the project/")
+life_exp=read.csv("Life Expectancy Data.csv")
+life_exp=na.omit(life_exp)
+life_exp=life_exp[2:22]
+#
+```
+# Model Building and Selection
+Since we have more than 1000 terms and only 20 variables, for the simplest linear model, there's no need to conduct bootstrapping.
+
+Note that since the our major interest does not concern the differences of life expectency among countries, due to the large amount of levels (193 levels) in the data, we decide to not take the variable country into consideration. Thus, we conduct the full model as below:
+```{r fullmodel}
+lm.full=lm(Life.expectancy~.,data = life_knncv)
+summary(lm.full)
+```
+As we can see from above, not all the predictors would have significant impact given others already in the model (possibly due to high colinearity). Consequently, we decide to apply a stepwise model selection. We take the stepwise AIC as our major criterion when adding the model, the result is shown below:
+```{r stepAIC,include=FALSE}
+library(leaps)
+library(MASS)
+lm.red=stepAIC(lmfull, direction="both")
+```
+```{r reduced}
+summary(lm.red)
+```
+As we can see from the outputs above, with fewer predictors, the MSE and R^2 did not change much, but we successfully reduced the complexicity of the model.
+
+# Residual Diagnosis
+
+The residual plots are shown below:
+```{r Diagnosis}
+par(mfrow=c(2,2))
+plot(lm.red)
+```
+
+As we can see from the residual plots, the Residual vs Fitted plot does not have any specific pattern, suggesting our model is not likely sufferring from lack of fit. The normal Q-Q plot is fairly linear, suggesting the normality assumption holds. In addition, the lowess curves in the second two plots suggest that there does not have outlying cases, or points with significant leverage effects. 
+
+# Cross Validation
+We use Leave one out cross validation to compare both full model and our reduced model
+```{r LOOCV}
+library(caret)
+# Define training control
+train.control <- trainControl(method = "LOOCV")
+```
+```{r FullCV}
+cv.full <- train(Life.expectancy ~., data = life_exp, method = "lm",
+               trControl = train.control)
+```
+
+```{r RedCV}
+cv.red <- train(Life.expectancy ~ Year + Status + Adult.Mortality + 
+    infant.deaths + Alcohol + percentage.expenditure + BMI + 
+    under.five.deaths + Total.expenditure + Diphtheria + HIV.AIDS + 
+    thinness.5.9.years + Income.composition.of.resources + Schooling, data = life_exp, method = "lm",  trControl = train.control)
+```
+
+```{r CVcomp}
+LOOCVCP=rbind(cv.full$results,cv.red$results)
+row.names(LOOCVCP)=c("Full","Reduced")
+print(LOOCVCP)
+```
+Comparing the MSE, we could also conclude that our reduced model is more stable in predicting new data and should be preferred.
