@@ -1,0 +1,154 @@
+---
+title: "methods comparison"
+author: "Tianke Li"
+date: "3/17/2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Data Processing
+```{r life_init,warning=FALSE}
+setwd("../../Project/the project/")
+life=read.csv("Life Expectancy Data.csv")
+life=na.omit(life)
+life=life[2:22]
+developed=as.numeric(life$Status=="Developed")
+life$Status=developed
+```
+
+```{r life_pre}
+train.size = dim(life)[1]/2
+set.seed(1361)
+train = sample(1:dim(life)[1], train.size)
+test = -train
+
+life.train=life[train,]
+life.test=life[test,]
+```
+
+##LSE
+```{r life_lse,warning=FALSE}
+library(glmnet)
+lm.life = lm(Life.expectancy~., data=life.train)
+lm.pred = predict(lm.life, life.test)
+lse.mse=mean((life.test$Life.expectancy - lm.pred)^2)
+print("The MSE for basic least square linear model is: ")
+print(lse.mse)
+```
+
+##Forward
+```{r life_forward, include=FALSE}
+library(leaps)
+library(MASS)
+lm.min=lm(Life.expectancy~1,data=life.train)
+lm.for=step(lm.min,direction = 'forward',scope = formula(lm.life))
+lm.pred=predict(lm.for,life.test)
+```
+
+```{r for_mse}
+for.mse=mean((life.test$Life.expectancy - lm.pred)^2)
+print("The MSE for forward selection model is: ")
+print(for.mse)
+```
+
+##Backward
+```{r life_backward,include=FALSE}
+library(leaps)
+library(MASS)
+lm.back=stepAIC(lm.life, direction="backward")
+lm.pred=predict(lm.back,life.test)
+```
+
+```{r back_mse}
+back.mse=mean((life.test$Life.expectancy - lm.pred)^2)
+print("The MSE for forward selection model is: ")
+print(back.mse)
+```
+
+##Ridge
+```{r life_ridge}
+library(glmnet)
+train.mat = model.matrix(Life.expectancy~., data=life.train)
+test.mat = model.matrix(Life.expectancy~., data=life.test)
+grid = 10 ^ seq(5, -5, length=100)
+mod.ridge = cv.glmnet(train.mat, life.train$Life.expectancy, alpha=0, lambda=grid, thresh=1e-12)
+ridge.lambda = mod.ridge$lambda.min
+ridge.pred = predict(mod.ridge, newx=test.mat, s=lambda.best)
+ridge.mse=mean((life.test$Life.expectancy - ridge.pred)^2)
+print("The MSE for ridge regression model is: ")
+print(ridge.mse)
+```
+##LASSO
+```{r life_lasso}
+mod.lasso = cv.glmnet(train.mat, life.train$Life.expectancy, alpha=1, lambda=grid, thresh=1e-12)
+lambda.best = mod.lasso$lambda.min
+lasso.pred = predict(mod.lasso, newx=test.mat, s=lambda.best)
+lasso.mse=mean((life.test$Life.expectancy - lasso.pred)^2)
+print("The MSE for LASSO regression model is: ")
+print(lasso.mse)
+```
+
+```{r life_lasso_coef}
+mod.lasso = glmnet(model.matrix(Life.expectancy~., data=life), life$Life.expectancy, alpha=1)
+lasso.coef=predict(mod.lasso, s=lambda.best, type="coefficients")
+print("The total number of non-zero coefficients in the LASSO regression")
+length(lasso.coef!=0)
+```
+##PCR
+```{r pcr}
+library(pls)
+pcr.fit = pcr(Life.expectancy~., data=life.train, scale=T, validation="CV")
+validationplot(pcr.fit, val.type="MSEP")
+```
+
+As we can see from the plot, after M=10, there tend to be little MSE decrease along with the increasing in the number of components. Consequently, we decide to 10 principle components.
+```{r PCRmse}
+pcr.pred = predict(pcr.fit, life.test, ncomp=10)
+pcr.mse=mean((life.test$Life.expectancy- pcr.pred)^2)
+print("The MSE for Principle Component regression model is: ")
+print(pcr.mse)
+```
+##PLS
+```{r pls}
+pls.fit = plsr(Life.expectancy~., data=life.train, scale=T, validation="CV")
+validationplot(pls.fit, val.type="MSEP")
+```
+As we can see from the plot, after M=5, there tend to be little MSE decrease along with the increasing in the number of components. Consequently, we decide to 5 principle components.
+```{r PLSmse}
+pls.pred = predict(pls.fit, life.test, ncomp=5)
+pls.mse=mean((life.test$Life.expectancy - pls.pred)^2)
+print("The MSE for partial least square regression model is: ")
+print(pls.mse)
+```
+##Summary
+```{r life_Sum}
+avg=mean(life.test$Life.expectancy)
+msto=mean((life.test$Life.expectancy-avg)^2)
+sum.mse=cbind(lse.mse,for.mse,back.mse,ridge.mse,lasso.mse,pcr.mse,pls.mse)
+sum.r2=round(1-sum.mse/msto,4)
+sum.h5p7=rbind(sum.r2,sum.mse)
+colnames(sum.h5p7)=c("LSE","Forward","Backward","RIDGE","LASSO","PCR","PLS")
+row.names(sum.h5p7)=c("R2","MSE")
+print(sum.h5p7)
+```
+```{r plots}
+library(ggplot2)
+life.reg=data.frame(t(sum.h5p7))
+life.reg$type=row.names(life.reg)
+ggplot(life.reg$type, life.reg$R2, ylim=c(0,1), ylab="R2",las=1)
+
+```
+
+As we can see from the results, forward, backward and stepwise selection all provided us with same model. Interestingly, though the Measles do not seem to be significant, it has been included in all these models. Though the data is suffering from high collinearity, the Ridge regression could not help improving the model. Similarly, dimension reduction techniques such as Lasso, PCR and PLS would have about similar $R^2$ but with higher MSE. 
+
+Therefore, since the problem is mainly forcused on the inference and interpretation, I would suggest use the model provided by the backward seletion:
+```{r}
+formula(lm.back)
+```
+
+#Problem 7
+Since everyone is using the same techniques that we learned in this class, there are not that much differences between the best models. However, one major differences between mine and Aaron's and Sam's is that I took the year as one independent variable in the model. On the contrary, Aaron and Sam eliminated the time effect since it introduces many correlations. Apperantly, the data is collected sequentially and many of the variables are correlated with time. But thinking differently, the time effect could also be considered as how the average life expectancy increase overtime (possibly due to the technology growth). Not sufferring from high dimensionality, eliminating explantory variables does not seem to be necessary. Therefore, both thoughts would make sense, and we might need further discussion in order to decide which model should be selected. 
