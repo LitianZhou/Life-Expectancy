@@ -9,7 +9,7 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r init, message=FALSE, warning=FALSE}
+```{r library and data init, message=FALSE, warning=FALSE}
 library(boot)
 library(pls)
 library(leaps)
@@ -23,7 +23,7 @@ attach(life_exp)
 ```
 
 
-```{r validation set approach}
+```{r validation set init}
 set.seed(1)
 trainid <- sample(1:nrow(life_exp), nrow(life_exp)/2)
 train <- life_exp[trainid,]
@@ -212,6 +212,7 @@ summary(gam.final.fit)
 The MSE of those methods are pretty close,while GAM has the best performace. 
 ```{r}
 err.all <- c(err.lm, loocv.err.OLS, err.ridge, err.lasso, err.pcr, err.pls, gam.error)
-names(err.all) <- c("OLS-VS", "OLS-LOOCV", "ridge", "lasso", "pcr", "pls","gam-VS")
-barplot(err.all )
+names(err.all) <- c("OLS-test", "OLS-CV", "Ridge", "lasso", "PCR", "PLS","gam-test")
+barplot(err.all, space=1.7,  col = "#009999", ylab = "MSE")
+err.all
 ```
